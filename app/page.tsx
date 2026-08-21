@@ -48,21 +48,7 @@ export default function HomePage() {
         </Link>
       </div>
 
-      {/* Info Row */}
-      <div style={{
-        display: 'flex',
-        gap: '2rem',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        color: 'var(--text-muted)',
-        fontSize: '0.85rem',
-        fontFamily: 'var(--font-sinhala)',
-        animation: 'fadeInUp 0.7s ease 0.5s both'
-      }}>
-        <span>✅ IQ ලකුණු පරීක්ෂාව</span>
-        <span>🔒 ජා.හැ. සත්‍යාපනය</span>
-        <span>📊 සැබෑ-කාල ශ්‍රේණිගත කිරීම</span>
-      </div>
+
     </div>
   );
 }

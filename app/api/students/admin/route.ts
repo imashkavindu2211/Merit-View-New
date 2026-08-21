@@ -1,20 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
-// GET /api/students/admin — Admin: get ALL students with full data
+// GET /api/students/admin — Admin: get ALL students with full data (with optional province/district filter)
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('x-admin-token');
   const adminSecret = process.env.ADMIN_SECRET;
 
   if (!authHeader || authHeader !== adminSecret) {
-    return NextResponse.json({ error: 'අනවසර ප්‍රවේශය.' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const { searchParams } = new URL(request.url);
+    const province = searchParams.get('province') || '';
+    const district = searchParams.get('district') || '';
+
+    let query = supabaseAdmin
       .from('students')
       .select('*')
       .order('iq_marks', { ascending: false });
+
+    if (province) query = query.eq('province', province);
+    if (district) query = query.eq('district', district);
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -27,7 +36,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('GET /api/students/admin error:', error);
     return NextResponse.json(
-      { error: 'ශිෂ්‍ය දත්ත ලබා ගැනීමේ දෝෂයක් ඇතිවිය.' },
+      { error: 'Failed to fetch student data.' },
       { status: 500 }
     );
   }

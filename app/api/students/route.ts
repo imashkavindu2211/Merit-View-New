@@ -1,24 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isValidProvince, isValidDistrict } from '@/lib/srilanka-regions';
 
 // POST /api/students — Submit student marks
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, phone, nic, iq_marks } = body;
+    const { name, phone, nic, iq_marks, province, district } = body;
 
     // Validation
     if (!name || !phone || !nic || iq_marks === undefined || iq_marks === null) {
       return NextResponse.json(
-        { error: 'සියලුම ක්ෂේත්‍ර පිරවිය යුතුය.' },
+        { error: 'All fields are required.' },
         { status: 400 }
       );
     }
 
-    if (typeof iq_marks !== 'number' || iq_marks < 0 || iq_marks > 200) {
+    if (typeof iq_marks !== 'number' || iq_marks < 0 || iq_marks > 100) {
       return NextResponse.json(
-        { error: 'IQ ලකුණු 0 සහ 200 අතර විය යුතුය.' },
+        { error: 'IQ marks must be between 0 and 100.' },
+        { status: 400 }
+      );
+    }
+
+    if (!province || !isValidProvince(province)) {
+      return NextResponse.json(
+        { error: 'Please select a valid province.' },
+        { status: 400 }
+      );
+    }
+
+    if (!district || !isValidDistrict(province, district)) {
+      return NextResponse.json(
+        { error: 'Please select a valid district for the selected province.' },
         { status: 400 }
       );
     }
@@ -29,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     if (nameStr.length < 2) {
       return NextResponse.json(
-        { error: 'නම අවම වශයෙන් අකුරු 2ක් විය යුතුය.' },
+        { error: 'Name must be at least 2 characters.' },
         { status: 400 }
       );
     }
@@ -43,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     if (existing) {
       return NextResponse.json(
-        { error: 'මෙම ජා.හැ. අංකය දැනටමත් ලියාපදිංචි කර ඇත.' },
+        { error: 'This NIC number is already registered.' },
         { status: 409 }
       );
     }
@@ -51,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Insert new student
     const { data, error } = await supabase
       .from('students')
-      .insert([{ name: nameStr, phone: phoneStr, nic: nicStr, iq_marks }])
+      .insert([{ name: nameStr, phone: phoneStr, nic: nicStr, iq_marks, province, district }])
       .select()
       .single();
 
@@ -59,7 +74,7 @@ export async function POST(request: NextRequest) {
       // Handle unique constraint violation (race condition)
       if (error.code === '23505') {
         return NextResponse.json(
-          { error: 'මෙම ජා.හැ. අංකය දැනටමත් ලියාපදිංචි කර ඇත.' },
+          { error: 'This NIC number is already registered.' },
           { status: 409 }
         );
       }
@@ -67,29 +82,38 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { message: 'ලකුණු සාර්ථකව ඇතුළත් කරන ලදී!', student: data },
+      { message: 'Marks submitted successfully!', student: data },
       { status: 201 }
     );
   } catch (error) {
     console.error('POST /api/students error:', error);
     return NextResponse.json(
-      { error: 'සර්වර් දෝෂයක් ඇතිවිය. කරුණාකර නැවත උත්සාහ කරන්න.' },
+      { error: 'A server error occurred. Please try again.' },
       { status: 500 }
     );
   }
 }
 
-// GET /api/students — Get all students ranked by IQ marks
-export async function GET() {
+// GET /api/students — Get all students ranked by IQ marks (with optional province/district filter)
+export async function GET(request: NextRequest) {
   try {
-    const { data, error } = await supabase
+    const { searchParams } = new URL(request.url);
+    const province = searchParams.get('province') || '';
+    const district = searchParams.get('district') || '';
+
+    let query = supabase
       .from('students')
-      .select('id, name, iq_marks, created_at')
+      .select('id, name, province, district, iq_marks, created_at')
       .order('iq_marks', { ascending: false });
+
+    if (province) query = query.eq('province', province);
+    if (district) query = query.eq('district', district);
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    // Compute ranks
+    // Compute ranks within the filtered set
     const ranked = (data || []).map((student, index) => ({
       ...student,
       rank: index + 1,
@@ -99,7 +123,7 @@ export async function GET() {
   } catch (error) {
     console.error('GET /api/students error:', error);
     return NextResponse.json(
-      { error: 'ශිෂ්‍යයන් ලබා ගැනීමේ දෝෂයක් ඇතිවිය.' },
+      { error: 'Failed to fetch students.' },
       { status: 500 }
     );
   }
@@ -111,7 +135,7 @@ export async function DELETE(request: NextRequest) {
   const adminSecret = process.env.ADMIN_SECRET;
 
   if (!authHeader || authHeader !== adminSecret) {
-    return NextResponse.json({ error: 'අනවසර ප්‍රවේශය.' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
   try {
@@ -119,9 +143,9 @@ export async function DELETE(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ message: 'සියලු ශිෂ්‍ය දත්ත මකා දමන ලදී.' });
+    return NextResponse.json({ message: 'All student records deleted.' });
   } catch (error) {
     console.error('DELETE /api/students error:', error);
-    return NextResponse.json({ error: 'මකා දැමීමේ දෝෂයක් ඇතිවිය.' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to delete records.' }, { status: 500 });
   }
 }

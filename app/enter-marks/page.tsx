@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Metadata } from 'next';
+import { PROVINCES, getDistrictsForProvince } from '@/lib/srilanka-regions';
 
 interface FormData {
   name: string;
   phone: string;
   nic: string;
   iq_marks: string;
+  province: string;
+  district: string;
 }
 
 interface FormErrors {
@@ -16,6 +18,8 @@ interface FormErrors {
   phone?: string;
   nic?: string;
   iq_marks?: string;
+  province?: string;
+  district?: string;
 }
 
 export default function EnterMarksPage() {
@@ -25,53 +29,87 @@ export default function EnterMarksPage() {
     phone: '',
     nic: '',
     iq_marks: '',
+    province: '',
+    district: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [apiError, setApiError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  // Feature flag
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [marksEnabled, setMarksEnabled] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/settings', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        setMarksEnabled(data.settings?.marks_entry_enabled ?? true);
+      })
+      .catch(() => setMarksEnabled(true)) // fail open
+      .finally(() => setSettingsLoading(false));
+  }, []);
+
+  // Districts available for the selected province
+  const availableDistricts = getDistrictsForProvince(formData.province);
+
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'නම ඇතුළත් කරන්න.';
+      newErrors.name = 'Please enter your full name.';
     } else if (formData.name.trim().length < 2) {
-      newErrors.name = 'නම අවම වශයෙන් අකුරු 2ක් විය යුතුය.';
+      newErrors.name = 'Name must be at least 2 characters.';
     }
 
     if (!formData.phone.trim()) {
-      newErrors.phone = 'දුරකථන අංකය ඇතුළත් කරන්න.';
+      newErrors.phone = 'Please enter your phone number.';
     } else if (!/^[\d\s+\-()]{9,15}$/.test(formData.phone.trim())) {
-      newErrors.phone = 'වලංගු දුරකථන අංකයක් ඇතුළත් කරන්න.';
+      newErrors.phone = 'Please enter a valid phone number.';
     }
 
     if (!formData.nic.trim()) {
-      newErrors.nic = 'ජා.හැ. අංකය ඇතුළත් කරන්න.';
+      newErrors.nic = 'Please enter your NIC number.';
     } else if (!/^[0-9]{9}[vVxX]$|^[0-9]{12}$/.test(formData.nic.trim())) {
-      newErrors.nic = 'වලංගු ජා.හැ. අංකයක් ඇතුළත් කරන්න. (උදා: 901234567V හෝ 199012345678)';
+      newErrors.nic = 'Please enter a valid NIC number. (e.g. 901234567V or 199012345678)';
     }
 
     if (formData.iq_marks === '') {
-      newErrors.iq_marks = 'IQ ලකුණු ඇතුළත් කරන්න.';
+      newErrors.iq_marks = 'Please enter your IQ marks.';
     } else {
       const marks = Number(formData.iq_marks);
       if (isNaN(marks) || !Number.isInteger(marks)) {
-        newErrors.iq_marks = 'IQ ලකුණු සංඛ්‍යාවක් විය යුතුය.';
-      } else if (marks < 0 || marks > 200) {
-        newErrors.iq_marks = 'IQ ලකුණු 0 සහ 200 අතර විය යුතුය.';
+        newErrors.iq_marks = 'IQ marks must be a whole number.';
+      } else if (marks < 0 || marks > 100) {
+        newErrors.iq_marks = 'IQ marks must be between 0 and 100.';
       }
+    }
+
+    if (!formData.province) {
+      newErrors.province = 'Please select your province.';
+    }
+
+    if (!formData.district) {
+      newErrors.district = 'Please select your district.';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name as keyof FormErrors]) {
-      setErrors((prev) => ({ ...prev, [name]: undefined }));
+
+    // Reset district when province changes
+    if (name === 'province') {
+      setFormData((prev) => ({ ...prev, province: value, district: '' }));
+      setErrors((prev) => ({ ...prev, province: undefined, district: undefined }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+      if (errors[name as keyof FormErrors]) {
+        setErrors((prev) => ({ ...prev, [name]: undefined }));
+      }
     }
     setApiError('');
   };
@@ -92,19 +130,21 @@ export default function EnterMarksPage() {
           phone: formData.phone.trim(),
           nic: formData.nic.trim().toUpperCase(),
           iq_marks: Number(formData.iq_marks),
+          province: formData.province,
+          district: formData.district,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setApiError(data.error || 'දෝෂයක් ඇතිවිය. කරුණාකර නැවත උත්සාහ කරන්න.');
+        setApiError(data.error || 'An error occurred. Please try again.');
         return;
       }
 
       setShowSuccess(true);
     } catch {
-      setApiError('ජාල දෝෂයක් ඇතිවිය. ඔබගේ ජාල සම්බන්ධතාව පරීක්ෂා කරන්න.');
+      setApiError('A network error occurred. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
@@ -112,22 +152,55 @@ export default function EnterMarksPage() {
 
   const handleSuccessClose = () => {
     setShowSuccess(false);
-    setFormData({ name: '', phone: '', nic: '', iq_marks: '' });
+    setFormData({ name: '', phone: '', nic: '', iq_marks: '', province: '', district: '' });
     setErrors({});
     router.push('/results');
   };
+
+  // Loading settings
+  if (settingsLoading) {
+    return (
+      <div className="form-page">
+        <div className="form-card" style={{ textAlign: 'center' }}>
+          <div className="spinner" style={{ margin: '2rem auto' }} />
+          <p className="spinner-text">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Feature disabled
+  if (!marksEnabled) {
+    return (
+      <div className="form-page">
+        <div className="feature-locked-card">
+          <div className="feature-locked-icon" aria-hidden="true">🔒</div>
+          <h1 className="feature-locked-title">Mark Entry Temporarily Disabled</h1>
+          <p className="feature-locked-text">
+            This feature has been disabled by the administrator.
+            <br />
+            <strong>Mark entry is currently disabled by the administrator.</strong>
+          </p>
+          <p className="feature-locked-subtext">Please check back later.</p>
+          <a href="/" className="feature-locked-btn">
+            ← Go to Home
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       {/* Success Overlay */}
       {showSuccess && (
-        <div className="success-overlay" role="dialog" aria-modal="true" aria-label="සාර්ථකත්වය">
+        <div className="success-overlay" role="dialog" aria-modal="true" aria-label="Success">
           <div className="success-modal">
             <span className="success-icon" aria-hidden="true">✅</span>
-            <h2 className="success-title">ලකුණු සාර්ථකව ඇතුළත් කරන ලදී!</h2>
+            <h2 className="success-title">Marks Submitted Successfully!</h2>
             <p className="success-text">
-              ඔබගේ ලකුණු සාර්ථකව පද්ධතියට ඇතුළත් කරන ලදී.
-              ශ්‍රේණිගත කිරීම් ප්‍රතිඵල පිටුවෙන් බලන්න.
+              Your marks have been recorded in the system.
+              View the rankings on the results page.
             </p>
             <button
               className="success-close-btn"
@@ -135,7 +208,7 @@ export default function EnterMarksPage() {
               id="btn-success-close"
               autoFocus
             >
-              ප්‍රතිඵල බලන්න 🏆
+              View Results 🏆
             </button>
           </div>
         </div>
@@ -145,8 +218,8 @@ export default function EnterMarksPage() {
         <div className="form-card">
           <div className="form-header">
             <span className="form-header-icon" aria-hidden="true">✏️</span>
-            <h1 className="form-title">ලකුණු ඇතුළත් කරන්න</h1>
-            <p className="form-subtitle">පහත තොරතුරු නිවැරදිව පුරවන්න</p>
+            <h1 className="form-title">Enter Marks</h1>
+            <p className="form-subtitle">Please fill in all details accurately</p>
           </div>
 
           {apiError && (
@@ -156,18 +229,18 @@ export default function EnterMarksPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} noValidate aria-label="ලකුණු ඇතුළත් කිරීමේ ආකෘති">
+          <form onSubmit={handleSubmit} noValidate aria-label="Mark entry form">
             {/* Name */}
             <div className="form-group">
               <label htmlFor="name" className="form-label">
-                නම <span aria-label="අවශ්‍ය">*</span>
+                Full Name <span aria-label="required">*</span>
               </label>
               <input
                 id="name"
                 name="name"
                 type="text"
                 className={`form-input ${errors.name ? 'error' : ''}`}
-                placeholder="ඔබගේ සම්පූර්ණ නම"
+                placeholder="Your full name"
                 value={formData.name}
                 onChange={handleChange}
                 autoComplete="name"
@@ -185,7 +258,7 @@ export default function EnterMarksPage() {
             {/* Phone */}
             <div className="form-group">
               <label htmlFor="phone" className="form-label">
-                දුරකථන අංකය <span aria-label="අවශ්‍ය">*</span>
+                Phone Number <span aria-label="required">*</span>
               </label>
               <input
                 id="phone"
@@ -210,14 +283,14 @@ export default function EnterMarksPage() {
             {/* NIC */}
             <div className="form-group">
               <label htmlFor="nic" className="form-label">
-                ජා.හැ. අංකය (NIC) <span aria-label="අවශ්‍ය">*</span>
+                NIC Number <span aria-label="required">*</span>
               </label>
               <input
                 id="nic"
                 name="nic"
                 type="text"
                 className={`form-input ${errors.nic ? 'error' : ''}`}
-                placeholder="901234567V හෝ 199012345678"
+                placeholder="901234567V or 199012345678"
                 value={formData.nic}
                 onChange={handleChange}
                 aria-describedby={errors.nic ? 'nic-error' : undefined}
@@ -232,21 +305,81 @@ export default function EnterMarksPage() {
               )}
             </div>
 
+            {/* Province */}
+            <div className="form-group">
+              <label htmlFor="province" className="form-label">
+                Province <span aria-label="required">*</span>
+              </label>
+              <select
+                id="province"
+                name="province"
+                className={`form-input ${errors.province ? 'error' : ''}`}
+                value={formData.province}
+                onChange={handleChange}
+                aria-describedby={errors.province ? 'province-error' : undefined}
+                aria-invalid={!!errors.province}
+                disabled={isLoading}
+              >
+                <option value="">— Select Province —</option>
+                {PROVINCES.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name} Province
+                  </option>
+                ))}
+              </select>
+              {errors.province && (
+                <p id="province-error" className="form-error-text" role="alert">
+                  {errors.province}
+                </p>
+              )}
+            </div>
+
+            {/* District */}
+            <div className="form-group">
+              <label htmlFor="district" className="form-label">
+                District <span aria-label="required">*</span>
+              </label>
+              <select
+                id="district"
+                name="district"
+                className={`form-input ${errors.district ? 'error' : ''}`}
+                value={formData.district}
+                onChange={handleChange}
+                aria-describedby={errors.district ? 'district-error' : undefined}
+                aria-invalid={!!errors.district}
+                disabled={isLoading || !formData.province}
+              >
+                <option value="">
+                  {formData.province ? '— Select District —' : '— Select Province first —'}
+                </option>
+                {availableDistricts.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+              {errors.district && (
+                <p id="district-error" className="form-error-text" role="alert">
+                  {errors.district}
+                </p>
+              )}
+            </div>
+
             {/* IQ Marks */}
             <div className="form-group">
               <label htmlFor="iq_marks" className="form-label">
-                IQ ලකුණු <span aria-label="අවශ්‍ය">*</span>
+                IQ Marks <span aria-label="required">*</span>
               </label>
               <input
                 id="iq_marks"
                 name="iq_marks"
                 type="number"
                 className={`form-input ${errors.iq_marks ? 'error' : ''}`}
-                placeholder="0 - 200"
+                placeholder="0 - 100"
                 value={formData.iq_marks}
                 onChange={handleChange}
                 min={0}
-                max={200}
+                max={100}
                 step={1}
                 aria-describedby={errors.iq_marks ? 'iq-error' : undefined}
                 aria-invalid={!!errors.iq_marks}
@@ -265,9 +398,9 @@ export default function EnterMarksPage() {
               id="btn-submit-marks"
               className={`form-submit-btn ${isLoading ? 'loading' : ''}`}
               disabled={isLoading}
-              aria-label={isLoading ? 'ඉදිරිපත් කිරීමේ ක්‍රියාවලිය...' : 'ලකුණු ඉදිරිපත් කරන්න'}
+              aria-label={isLoading ? 'Submitting...' : 'Submit Marks'}
             >
-              {isLoading ? '⏳ ඉදිරිපත් කිරීම...' : '✅ ඉදිරිපත් කරන්න'}
+              {isLoading ? '⏳ Submitting...' : '✅ Submit Marks'}
             </button>
           </form>
         </div>
