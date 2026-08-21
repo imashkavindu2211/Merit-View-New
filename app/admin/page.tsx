@@ -14,7 +14,7 @@ export default function AdminLoginPage() {
     e.preventDefault();
 
     if (!username.trim() || !password) {
-      setError('පරිශීලක නාමය සහ මුරපදය ඇතුළත් කරන්න.');
+      setError('Please enter your username and password.');
       return;
     }
 
@@ -31,7 +31,7 @@ export default function AdminLoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'ලොගින් වීම අසාර්ථකයි.');
+        setError(data.error || 'Login failed. Please try again.');
         return;
       }
 
@@ -39,7 +39,7 @@ export default function AdminLoginPage() {
       sessionStorage.setItem('admin_token', data.token);
       router.push('/admin/dashboard');
     } catch {
-      setError('ජාල දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න.');
+      setError('A network error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -50,8 +50,8 @@ export default function AdminLoginPage() {
       <div className="admin-login-card">
         <div className="form-header">
           <span className="form-header-icon" aria-hidden="true">🔐</span>
-          <h1 className="form-title">පරිපාලක ප්‍රවේශය</h1>
-          <p className="form-subtitle">Admin Login</p>
+          <h1 className="form-title">Admin Access</h1>
+          <p className="form-subtitle">Sign in to the admin panel</p>
         </div>
 
         {error && (
@@ -61,10 +61,10 @@ export default function AdminLoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate aria-label="පරිපාලක ලොගින් ආකෘති">
+        <form onSubmit={handleSubmit} noValidate aria-label="Admin login form">
           <div className="form-group">
             <label htmlFor="admin-username" className="form-label">
-              පරිශීලක නාමය <span aria-label="අවශ්‍ය">*</span>
+              Username <span aria-label="required">*</span>
             </label>
             <input
               id="admin-username"
@@ -75,13 +75,13 @@ export default function AdminLoginPage() {
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
               disabled={isLoading}
-              aria-label="පරිපාලක පරිශීලක නාමය"
+              aria-label="Admin username"
             />
           </div>
 
           <div className="form-group">
             <label htmlFor="admin-password" className="form-label">
-              මුරපදය <span aria-label="අවශ්‍ය">*</span>
+              Password <span aria-label="required">*</span>
             </label>
             <input
               id="admin-password"
@@ -92,7 +92,7 @@ export default function AdminLoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
               disabled={isLoading}
-              aria-label="පරිපාලක මුරපදය"
+              aria-label="Admin password"
             />
           </div>
 
@@ -106,7 +106,7 @@ export default function AdminLoginPage() {
             }}
             disabled={isLoading}
           >
-            {isLoading ? '⏳ ලොගින් වෙමින්...' : '🔐 ලොගින් වන්න'}
+            {isLoading ? '⏳ Signing in...' : '🔐 Sign In'}
           </button>
         </form>
 
@@ -115,9 +115,8 @@ export default function AdminLoginPage() {
           marginTop: '1.5rem',
           fontSize: '0.8rem',
           color: 'var(--text-muted)',
-          fontFamily: 'var(--font-sinhala)',
         }}>
-          ශිෂ්‍යයෙක්ද? <a href="/" style={{ color: 'var(--accent-gold)' }}>මුල් පිටුවට යන්න</a>
+          Are you a student? <a href="/" style={{ color: 'var(--accent-gold)' }}>Go to home page</a>
         </p>
       </div>
     </div>

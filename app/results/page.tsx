@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Metadata } from 'next';
+import { PROVINCES, getDistrictsForProvince } from '@/lib/srilanka-regions';
 
 interface RankedStudent {
   id: string;
   name: string;
+  province: string;
+  district: string;
   iq_marks: number;
   rank: number;
   created_at: string;
@@ -21,50 +23,180 @@ export default function ResultsPage() {
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // Filters
+  const [filterProvince, setFilterProvince] = useState('');
+  const [filterDistrict, setFilterDistrict] = useState('');
+
+  // Feature flag
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [resultsEnabled, setResultsEnabled] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/settings', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        setResultsEnabled(data.settings?.results_viewing_enabled ?? true);
+      })
+      .catch(() => setResultsEnabled(true)) // fail open
+      .finally(() => setSettingsLoading(false));
+  }, []);
+
   const fetchResults = useCallback(async () => {
     try {
-      const res = await fetch('/api/students', { cache: 'no-store' });
+      const params = new URLSearchParams();
+      if (filterProvince) params.set('province', filterProvince);
+      if (filterDistrict) params.set('district', filterDistrict);
+      const url = `/api/students${params.toString() ? `?${params}` : ''}`;
+
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
       setStudents(data.students || []);
       setLastUpdated(new Date());
       setError('');
     } catch {
-      setError('ප්‍රතිඵල ලබා ගැනීමේ දෝෂයක් ඇතිවිය. නැවත උත්සාහ කරන්න.');
+      setError('Failed to load results. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [filterProvince, filterDistrict]);
 
   useEffect(() => {
-    fetchResults();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchResults, 30000);
-    return () => clearInterval(interval);
-  }, [fetchResults]);
+    if (!settingsLoading && resultsEnabled) {
+      setIsLoading(true);
+      fetchResults();
+      const interval = setInterval(fetchResults, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchResults, settingsLoading, resultsEnabled]);
+
+  const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilterProvince(e.target.value);
+    setFilterDistrict(''); // reset district when province changes
+  };
+
+  const handleDistrictChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFilterDistrict(e.target.value);
+  };
+
+  const availableDistricts = getDistrictsForProvince(filterProvince);
 
   const top3 = students.slice(0, 3);
-  const restStudents = students.slice(3);
+
+  // Loading settings
+  if (settingsLoading) {
+    return (
+      <div className="results-page">
+        <div className="spinner-wrapper">
+          <div className="spinner" />
+          <p className="spinner-text">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Feature disabled
+  if (!resultsEnabled) {
+    return (
+      <div className="results-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="feature-locked-card">
+          <div className="feature-locked-icon" aria-hidden="true">🏆</div>
+          <h1 className="feature-locked-title">Results Viewing Temporarily Disabled</h1>
+          <p className="feature-locked-text">
+            Results have not yet been published by the administrator.
+            <br />
+            <strong>Results viewing is currently disabled by the administrator.</strong>
+          </p>
+          <p className="feature-locked-subtext">Please check back later.</p>
+          <a href="/" className="feature-locked-btn">
+            ← Go to Home
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="results-page">
       <div className="results-container">
         {/* Header */}
         <div className="results-header">
-          <h1 className="results-title">🏆 ශ්‍රේණිගත කිරීම් ප්‍රතිඵල</h1>
-          <p className="results-subtitle">IQ ලකුණු අනුව ශිෂ්‍ය ශ්‍රේණිගත කිරීම</p>
+          <h1 className="results-title">🏆 Rankings & Results</h1>
+          <p className="results-subtitle">Student rankings by IQ marks</p>
           {lastUpdated && (
             <p className="results-subtitle" style={{ marginTop: '0.25rem', fontSize: '0.78rem' }}>
-              අවසන් යාවත්කාලීනය: {lastUpdated.toLocaleTimeString('si-LK')}
+              Last updated: {lastUpdated.toLocaleTimeString('en-LK')}
             </p>
           )}
         </div>
 
+        {/* ── Province / District Filter ── */}
+        <div className="results-filter-bar" role="search" aria-label="Filter results by region">
+          <div className="results-filter-group">
+            <label htmlFor="filter-province" className="results-filter-label">
+              🗺️ Province
+            </label>
+            <select
+              id="filter-province"
+              className="results-filter-select"
+              value={filterProvince}
+              onChange={handleProvinceChange}
+            >
+              <option value="">All Provinces</option>
+              {PROVINCES.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name} Province
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="results-filter-group">
+            <label htmlFor="filter-district" className="results-filter-label">
+              📍 District
+            </label>
+            <select
+              id="filter-district"
+              className="results-filter-select"
+              value={filterDistrict}
+              onChange={handleDistrictChange}
+              disabled={!filterProvince}
+            >
+              <option value="">
+                {filterProvince ? 'All Districts' : 'Select Province first'}
+              </option>
+              {availableDistricts.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(filterProvince || filterDistrict) && (
+            <button
+              className="results-filter-clear"
+              onClick={() => { setFilterProvince(''); setFilterDistrict(''); }}
+              aria-label="Clear filters"
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+
+        {/* Active filter pill */}
+        {(filterProvince || filterDistrict) && (
+          <p className="results-filter-active">
+            Showing results for:{' '}
+            <strong>{filterDistrict || filterProvince}{filterDistrict ? `, ${filterProvince} Province` : ' Province'}</strong>
+          </p>
+        )}
+
         {/* Loading State */}
         {isLoading && (
-          <div className="spinner-wrapper" role="status" aria-label="ලෝඩ් වෙමින්...">
+          <div className="spinner-wrapper" role="status" aria-label="Loading...">
             <div className="spinner" aria-hidden="true" />
-            <p className="spinner-text">ප්‍රතිඵල ලබා ගනිමින්...</p>
+            <p className="spinner-text">Fetching results...</p>
           </div>
         )}
 
@@ -80,17 +212,16 @@ export default function ResultsPage() {
                   display: 'block',
                   marginTop: '0.5rem',
                   background: 'none',
-                  border: '1px solid rgba(239,68,68,0.4)',
-                  color: '#fca5a5',
+                  border: '1px solid rgba(220,38,38,0.3)',
+                  color: '#991b1b',
                   borderRadius: '6px',
                   padding: '0.3rem 0.75rem',
                   cursor: 'pointer',
                   fontSize: '0.85rem',
-                  fontFamily: 'var(--font-sinhala)',
                 }}
                 id="btn-retry-results"
               >
-                නැවත උත්සාහ කරන්න
+                Retry
               </button>
             </div>
           </div>
@@ -98,34 +229,35 @@ export default function ResultsPage() {
 
         {/* Empty State */}
         {!isLoading && !error && students.length === 0 && (
-          <div className="empty-state" aria-label="ශිෂ්‍යයන් නොමැත">
+          <div className="empty-state" aria-label="No students">
             <span className="empty-icon" aria-hidden="true">📋</span>
-            <h2 className="empty-title">තවම ශිෂ්‍යයන් ලියාපදිංචි නොවීය</h2>
+            <h2 className="empty-title">
+              {filterProvince || filterDistrict ? 'No results for this region' : 'No students registered yet'}
+            </h2>
             <p className="empty-text">
-              ලකුණු ඇතුළත් කිරීමෙන් පසු ශ්‍රේණිගත කිරීම් මෙහි දිස්වේ.
+              {filterProvince || filterDistrict
+                ? 'Try selecting a different province or district.'
+                : 'Rankings will appear here once students submit their marks.'}
             </p>
           </div>
         )}
 
         {/* Podium — Top 3 */}
         {!isLoading && !error && top3.length > 0 && (
-          <div
-            className="podium"
-            role="region"
-            aria-label="ඉහළ ශිෂ්‍යයන් 3"
-          >
+          <div className="podium" role="region" aria-label="Top 3 students">
             {top3.map((student, index) => (
               <div
                 key={student.id}
                 className={`podium-card ${PODIUM_CLASSES[index]}`}
-                aria-label={`${index + 1} වන ස්ථානය: ${student.name}`}
+                aria-label={`Rank ${index + 1}: ${student.name}`}
               >
                 <span className="podium-medal" aria-hidden="true">
                   {MEDALS[index]}
                 </span>
                 <p className="podium-name">{student.name}</p>
-                <p className="podium-marks">{student.iq_marks}</p>
-                <p className="podium-marks-label">IQ ලකුණු</p>
+                <p className="podium-marks">{student.iq_marks}<span style={{ fontSize: '0.6em', opacity: 0.7 }}>/100</span></p>
+                <p className="podium-marks-label">IQ Marks</p>
+                <p className="podium-region">{student.district}, {student.province}</p>
               </div>
             ))}
           </div>
@@ -133,14 +265,14 @@ export default function ResultsPage() {
 
         {/* Full Rankings Table */}
         {!isLoading && !error && students.length > 0 && (
-          <div className="rankings-table-wrapper" role="region" aria-label="සම්පූර්ණ ශ්‍රේණිගත කිරීම්">
-            <table className="rankings-table" aria-label="ශිෂ්‍ය ශ්‍රේණිගත කිරීම් වගුව">
+          <div className="rankings-table-wrapper" role="region" aria-label="Full rankings">
+            <table className="rankings-table" aria-label="Student rankings table">
               <thead>
                 <tr>
-                  <th scope="col" style={{ width: '60px' }}>ශ්‍රේණිය</th>
-                  <th scope="col">නම</th>
-                  <th scope="col" style={{ textAlign: 'right' }}>IQ ලකුණු</th>
-                  <th scope="col" style={{ textAlign: 'right' }}>ලියාපදිංචි දිනය</th>
+                  <th scope="col" style={{ width: '60px' }}>Rank</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Province / District</th>
+                  <th scope="col" style={{ textAlign: 'right' }}>IQ Marks</th>
                 </tr>
               </thead>
               <tbody>
@@ -152,7 +284,7 @@ export default function ResultsPage() {
                       <td>
                         <span
                           className={`rank-badge ${isTop3 ? RANK_CLASSES[rankIdx] : ''}`}
-                          aria-label={`${student.rank} වන ස්ථානය`}
+                          aria-label={`Rank ${student.rank}`}
                         >
                           {isTop3 ? MEDALS[rankIdx] : student.rank}
                         </span>
@@ -160,11 +292,14 @@ export default function ResultsPage() {
                       <td style={{ fontWeight: isTop3 ? 700 : 400 }}>
                         {student.name}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <span className="marks-value">{student.iq_marks}</span>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                        {student.district}
+                        {student.province && (
+                          <span style={{ opacity: 0.6 }}> · {student.province}</span>
+                        )}
                       </td>
-                      <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                        {new Date(student.created_at).toLocaleDateString('si-LK')}
+                      <td style={{ textAlign: 'right' }}>
+                        <span className="marks-value">{student.iq_marks}<span style={{ fontSize: '0.75em', opacity: 0.6 }}>/100</span></span>
                       </td>
                     </tr>
                   );
@@ -177,7 +312,7 @@ export default function ResultsPage() {
         {/* Auto refresh note */}
         {!isLoading && students.length > 0 && (
           <p className="refresh-info" aria-live="polite">
-            🔄 ප්‍රතිඵල සෑම තත්පර 30කට වරක් ස්වයංක්‍රීයව යාවත්කාලීන වේ
+            🔄 Results auto-update every 30 seconds
           </p>
         )}
       </div>

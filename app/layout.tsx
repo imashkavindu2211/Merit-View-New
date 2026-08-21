@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 
@@ -13,13 +13,20 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#f5f6fa',
+};
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="si">
+    <html lang="si" data-scroll-behavior="smooth">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -33,7 +40,7 @@ export default function RootLayout({
           <Navbar />
           <main className="main-content">{children}</main>
           <footer className="footer">
-            <p>© 2024 MeritView · ශිෂ්‍ය ශ්‍රේණිගත කිරීමේ පද්ධතිය</p>
+            <p>© 2026 MeritView · Amarasri Herath Technical Team</p>
           </footer>
         </div>
       </body>
